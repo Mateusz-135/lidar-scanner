@@ -22,7 +22,6 @@ void init(Servo *servo, TIM_HandleTypeDef *timer, uint32_t timer_channel)
 	servo->timer_channel = timer_channel;
 
 	servo->position = 0.0f;
-	servo->previous_position = 0.0f;
 }
 
 void servoMoveTo(Servo *servo, float angle)
@@ -32,7 +31,6 @@ void servoMoveTo(Servo *servo, float angle)
 	else if(angle > servo->max_angle_allowed_by_user)
 		angle = servo->max_angle_allowed_by_user;
 
-	servo->previous_position = servo->position;
 	servo->position = angle;
 
 	float range = (float)(servo->max_pulse_width_microseconds - servo->min_pulse_width_microseconds);
@@ -49,21 +47,17 @@ void servoMoveTo(Servo *servo, float angle)
 
 void servoMoveBy(Servo *servo, float angle)
 {
-	if(servo->position + angle > servo->min_angle_allowed_by_user ||
-			servo->position + angle < servo->max_angle_allowed_by_user)
+	if(servo->position + angle <= servo->min_angle_allowed_by_user)
 	{
-		servo->previous_position = servo->position;
-		servo->position += angle;
-	}
-	else if(servo->position + angle < servo->min_angle_allowed_by_user)
-	{
-		servo->previous_position = servo->position;
 		servo->position = servo->min_angle_allowed_by_user;
 	}
-	if(servo->position + angle > servo->max_angle_allowed_by_user)
+	else if(servo->position + angle >= servo->max_angle_allowed_by_user)
 	{
-		servo->previous_position = servo->position;
 		servo->position = servo->max_angle_allowed_by_user;
+	}
+	else
+	{
+		servo->position += angle;
 	}
 
 	float range = (float)(servo->max_pulse_width_microseconds - servo->min_pulse_width_microseconds);
