@@ -55,7 +55,7 @@ static uint8_t scan_in_progress = 0;
 
 static float increment_yaw = 1.0f;
 static float increment_pitch = 1.0f;
-static uint8_t change_pitch_direction_count = 0;
+static uint16_t change_pitch_direction_count = 0;
 static long int expected_sample_count = 0;
 static long int sample_count = 0;
 
@@ -64,11 +64,15 @@ static uint16_t sensor_frequency = 500/5;
 static int counter = 0;
 
 static uint8_t received_byte[1];
-static uint8_t data8byte[8];
+#define SEND_DATA_SIZE 14
+static uint8_t data14byte[SEND_DATA_SIZE];
 static uint8_t read_step_info_flag = 0;
 
-static uint8_t tfluna_data_frame[9];
-static uint16_t distance = 0;
+#define LUNA_DATA_SIZE  8
+static uint8_t tfluna_data_frame[LUNA_DATA_SIZE];
+
+static int16_t pitch = 0;
+static int16_t yaw = 0;
 
 static Servo YawServo;
 static Servo PitchServo;
@@ -83,7 +87,7 @@ static void MX_USART2_UART_Init(void);
 static void MX_USART1_UART_Init(void);
 static void MX_TIM3_Init(void);
 /* USER CODE BEGIN PFP */
-void serialWriteMeasurement8Byte_IT(UART_HandleTypeDef *huart, int16_t distance, int16_t pitch, int16_t yaw);
+void serialWriteMeasurement14Byte_IT(UART_HandleTypeDef *huart);
 void executeScan(Servo *yawServo, Servo *pitchServo, TFLuna *sensor, GPIO_PinState *stop);
 void homePosition(Servo *YawServo, Servo *PitchServo);
 void flushBuffer(UART_HandleTypeDef *huart);
@@ -101,7 +105,7 @@ void finishScanning(Servo *YawServo, Servo *PitchServo, TFLuna *sensor);
 // #   #  #   #  #  #     #       #  #  ##    #    #      #  #   #  #   #   #  #        #        #
 //  ###   #   #  #   #    #       #  #   #    #    #####  #   #  #   #   ###   #        #    #####
 
-typedef enum{
+typedef enum int8_t{
 	UNKNOWN = 0x60,
 	STOP_ALL = 0x61,
 	START_SCANNING = 0x62,
@@ -128,7 +132,7 @@ void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
 
 		if(scan_in_progress == 1)
 		{
-			HAL_UART_Receive_IT(&huart1, tfluna_data_frame, 9);
+			HAL_UART_Receive_IT(&huart1, tfluna_data_frame, LUNA_DATA_SIZE);
 			return;
 		}
 
@@ -146,12 +150,7 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 		{
 			sample_count++;
 
-			distance = tfluna_data_frame[3] << 8 |  tfluna_data_frame[2];
-
-			serialWriteMeasurement8Byte_IT(&huart2,
-					distance + 2,
-					(int16_t)(10.0f * PitchServo.position - 300.0),
-					(int16_t)(10.0f * YawServo.position - 900.0));
+			serialWriteMeasurement14Byte_IT(&huart2);
 
 			if(sample_count > 1)
 			{
@@ -167,7 +166,7 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 			servoMoveBy(&PitchServo, increment_pitch);
 		}
 		else
-			HAL_UART_Receive_IT(&huart1, tfluna_data_frame, 9);
+			HAL_UART_Receive_IT(&huart1, tfluna_data_frame, LUNA_DATA_SIZE);
 	}
 	else if(huart == &huart2) // usb
 	{
@@ -227,21 +226,30 @@ void executeScanTopBottom(Servo *YawServo, Servo *PitchServo, TFLuna *sensor)
 
 	TFLunaEnableOutput(sensor, 1);
 
-	HAL_UART_Receive_IT(sensor->uart_handler, tfluna_data_frame, 9);
+	HAL_UART_Receive_IT(sensor->uart_handler, tfluna_data_frame, LUNA_DATA_SIZE);
 }
 
-void serialWriteMeasurement8Byte_IT(UART_HandleTypeDef *huart, int16_t distance_data, int16_t pitch_data, int16_t yaw_data)
+void serialWriteMeasurement14Byte_IT(UART_HandleTypeDef *huart)
 {
-	data8byte[0] = (uint8_t)FRAME_BEGIN;
-	data8byte[1] = (uint8_t)distance_data;
-	data8byte[2] = (uint8_t)(distance_data >> 8);
-	data8byte[3] = (uint8_t)pitch_data;
-	data8byte[4] = (uint8_t)(pitch_data >> 8);
-	data8byte[5] = (uint8_t)yaw_data;
-	data8byte[6] = (uint8_t)(yaw_data >> 8);
-	data8byte[7] = (uint8_t)FRAME_END;
+	pitch = (int16_t)(10.0f * PitchServo.position);
+	yaw = (int16_t)(10.0f * YawServo.position);
 
-	HAL_UART_Transmit_IT(huart, (uint8_t*)data8byte, 8);
+	data14byte[0] = (int8_t)FRAME_BEGIN;
+	data14byte[1] = tfluna_data_frame[0];
+	data14byte[2] = tfluna_data_frame[1];
+	data14byte[3] = (uint8_t)pitch;
+	data14byte[4] = (uint8_t)(pitch >> 8);
+	data14byte[5] = (uint8_t)yaw;
+	data14byte[6] = (uint8_t)(yaw >> 8);
+	data14byte[7] = tfluna_data_frame[2];
+	data14byte[8] = tfluna_data_frame[3];
+	data14byte[9] = tfluna_data_frame[4];
+	data14byte[10] = tfluna_data_frame[5];
+	data14byte[11] = tfluna_data_frame[6];
+	data14byte[12] = tfluna_data_frame[7];
+	data14byte[13] = (int8_t)FRAME_END;
+
+	HAL_UART_Transmit_IT(huart, (uint8_t*)data14byte, SEND_DATA_SIZE);
 }
 
 void finishScanning(Servo *YawServo, Servo *PitchServo, TFLuna *sensor)
@@ -251,16 +259,22 @@ void finishScanning(Servo *YawServo, Servo *PitchServo, TFLuna *sensor)
 	scan_in_progress = 0;
 	sample_count = 0;
 
-	data8byte[0] = (uint8_t)SCAN_FINISHED;
-	data8byte[1] = (uint8_t)SCAN_FINISHED;
-	data8byte[2] = (uint8_t)SCAN_FINISHED;
-	data8byte[3] = (uint8_t)SCAN_FINISHED;
-	data8byte[4] = (uint8_t)SCAN_FINISHED;
-	data8byte[5] = (uint8_t)SCAN_FINISHED;
-	data8byte[6] = (uint8_t)SCAN_FINISHED;
-	data8byte[7] = (uint8_t)SCAN_FINISHED;
+	data14byte[0] = (uint8_t)SCAN_FINISHED;
+	data14byte[1] = (uint8_t)SCAN_FINISHED;
+	data14byte[2] = (uint8_t)SCAN_FINISHED;
+	data14byte[3] = (uint8_t)SCAN_FINISHED;
+	data14byte[4] = (uint8_t)SCAN_FINISHED;
+	data14byte[5] = (uint8_t)SCAN_FINISHED;
+	data14byte[6] = (uint8_t)SCAN_FINISHED;
+	data14byte[7] = (uint8_t)SCAN_FINISHED;
+	data14byte[8] = (uint8_t)SCAN_FINISHED;
+	data14byte[9] = (uint8_t)SCAN_FINISHED;
+	data14byte[10] = (uint8_t)SCAN_FINISHED;
+	data14byte[11] = (uint8_t)SCAN_FINISHED;
+	data14byte[12] = (uint8_t)SCAN_FINISHED;
+	data14byte[13] = (uint8_t)SCAN_FINISHED;
 
-	HAL_UART_Transmit_IT(&huart2, (uint8_t*)data8byte, 8);
+	HAL_UART_Transmit_IT(&huart2, (uint8_t*)data14byte, SEND_DATA_SIZE);
 }
 
 void homePosition(Servo *YawServo, Servo *PitchServo)
@@ -320,18 +334,22 @@ int main(void)
   init(&YawServo, &htim3, TIM_CHANNEL_2);
   YawServo.min_pulse_width_microseconds = 600 /* + offset */;
   YawServo.max_pulse_width_microseconds = 2570 /* + offset */;
-  YawServo.min_angle_allowed_by_user = 0.0;
-  YawServo.max_angle_allowed_by_user = 180.0;
+  YawServo.min_angle_possible = -90.0;
+  YawServo.max_angle_possible = 90.0;
+  YawServo.min_angle_allowed_by_user = -90.0;
+  YawServo.max_angle_allowed_by_user = 90.0;
 
   init(&PitchServo, &htim3, TIM_CHANNEL_1);
   PitchServo.min_pulse_width_microseconds = 500 + 10/* + offset */;
   PitchServo.max_pulse_width_microseconds = 2600 + 10 /* + offset */;
-  PitchServo.min_angle_allowed_by_user = 0.0;
-  PitchServo.max_angle_allowed_by_user = 120.0;
+  PitchServo.min_angle_possible = -30.0;
+  PitchServo.max_angle_possible = 150.0;
+  PitchServo.min_angle_allowed_by_user = -30.0;
+  PitchServo.max_angle_allowed_by_user = 90.0;
 
   sensor.uart_handler = &huart1;
   TFLunaEnableOutput(&sensor, 0);
-  TFLunaSetOutputFormat(&sensor, CM_9BYTE);
+  TFLunaSetOutputFormat(&sensor, CM_8BYTE);
   TFLunaSetFrequency(&sensor, sensor_frequency);
 
   flushBuffer(sensor.uart_handler);
