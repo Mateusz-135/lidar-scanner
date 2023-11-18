@@ -47,27 +47,5 @@ void servoMoveTo(Servo *servo, float angle)
 
 void servoMoveBy(Servo *servo, float angle)
 {
-	if(servo->position + angle <= servo->min_angle_allowed_by_user)
-	{
-		servo->position = servo->min_angle_allowed_by_user;
-	}
-	else if(servo->position + angle >= servo->max_angle_allowed_by_user)
-	{
-		servo->position = servo->max_angle_allowed_by_user;
-	}
-	else
-	{
-		servo->position += angle;
-	}
-
-	float range = (float)(servo->max_pulse_width_microseconds - servo->min_pulse_width_microseconds);
-
-	float percent = (servo->position - servo->min_angle_possible) / (servo->max_angle_possible - servo->min_angle_possible);
-
-	float pulse_microseconds = (percent * range) + (float)servo->min_pulse_width_microseconds;
-
-	// 20000 microseconds as for period of 50Hz PWM signal
-	uint32_t duty = (uint32_t)( (pulse_microseconds * (float)(servo->timer->Init.Period + 1)) / 20000.0);
-
-	__HAL_TIM_SET_COMPARE(servo->timer, servo->timer_channel, duty);
+	servoMoveTo(servo, servo->position + angle);
 }
